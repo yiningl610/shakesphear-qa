@@ -1,2 +1,6 @@
 streamlit
-openai
+pandas
+transformers
+spacy
+re
+PyPDF2
