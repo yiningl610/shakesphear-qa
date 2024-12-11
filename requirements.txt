@@ -4,4 +4,6 @@ transformers
 spacy
 PyPDF2
 spacy_streamlit
-
+torch
+torchvision
+torchaudio
