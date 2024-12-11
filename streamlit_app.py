@@ -4,7 +4,7 @@ from transformers import pipeline
 import spacy
 import re
 from PyPDF2 import PdfReader
-from transformers import pipeline
+import spacy_streamlit
 
 def extract_and_clean_text(pdf_path, start_page):
 
@@ -65,6 +65,9 @@ plays = pdf_text.split("THE END")
 titles = extract_title(plays)
 titles = pd.DataFrame(titles, columns=['Title']).head()
 
+#models = ["en_core_web_sm", "en_core_web_md"]
+#default_text = "Sundar Pichai is the CEO of Google."
+#spacy_streamlit.visualize(models, default_text)
 nlp = spacy.load("en_core_web_sm")
 nlp.max_length = 4703297
 
