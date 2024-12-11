@@ -1,56 +1,91 @@
 import streamlit as st
-from openai import OpenAI
+import pandas as pd
+from transformers import pipeline
+import spacy
+import re
+from PyPDF2 import PdfReader
+from transformers import pipeline
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
-)
+def extract_and_clean_text(pdf_path, start_page):
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+    extracted_text = ""
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+    reader = PdfReader(pdf_path)
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    total_pages = len(reader.pages)
+    for page_number in range(start_page - 1, total_pages):
+        page = reader.pages[page_number]
+        page_text = page.extract_text()
+        cleaned_text = ""
+        cleaned_text = re.sub(r"<<.*?>>", "", page_text, flags=re.DOTALL)
+        cleaned_text = re.sub(r"p\. \d+", "", cleaned_text, flags=re.DOTALL)
+        cleaned_text = re.sub(r"Page \d+|Act [IVX]+|Scene \d+", "", cleaned_text)
+        cleaned_text = re.sub(r"[^a-zA-Z0-9\s]", "", cleaned_text)
+        cleaned_text = re.sub(r"\s+", " ", cleaned_text).strip()
+        extracted_text += cleaned_text
 
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    return extracted_text
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
+def extract_title(text_list, name="William Shakespeare"):
+    results = []
+    for text in text_list:
+        match = re.search(r"(\d+)\s+(.*?)\s+" + re.escape(name), text)
+        if match:
+          text = match.group(2)
+          match = re.search(r".*\d+\s+(.*)", text)
+          pattern = re.compile(rf"by$", re.IGNORECASE)
+          if match:
+            cleaned_text = re.sub(pattern, "", match.group(1)).strip()
+            results.append(cleaned_text)
+          else:
+            cleaned_text = re.sub(pattern, "", text).strip()
+            results.append(cleaned_text)
 
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        else:
+            results.append(None)
 
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
+    return results
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+def tokenize_large_text(text, chunk_size=100000):
+
+    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    
+    tokens = []
+    for chunk in chunks:
+        doc = nlp(chunk)
+        chunk_tokens = [token.text.lower() for token in doc if not token.is_stop and not token.is_punct]
+        tokens.extend(chunk_tokens)
+    
+    return tokens
+
+pdf_path = "Shakespeare-Complete-Works.pdf"
+pdf_text = extract_and_clean_text(pdf_path,77)
+plays = pdf_text.split("THE END")
+
+titles = extract_title(plays)
+titles = pd.DataFrame(titles, columns=['Title']).head()
+
+nlp = spacy.load("en_core_web_sm")
+nlp.max_length = 4703297
+
+qa_pipeline = pipeline("question-answering", model="distilbert-base-uncased-distilled-squad")
+
+def main():
+    st.title("Question Answering App")
+
+    title = st.selectbox("Select a Play:", titles["Title"])
+    index = titles.index[titles['Title'] == title].tolist()[0]
+    tokens = tokenize_large_text(plays[index])
+    copus = " ".join(tokens)
+
+    question = st.text_input("Enter your question:")
+
+    if st.button("Get Answer"):
+        if question.strip():
+            answer = qa_pipeline(question=question, context=copus)
+            st.write("**Answer:**", answer["answer"])
+        else:
+            st.warning("Please enter a question.")
+
+if __name__ == "__main__":
+    main()
