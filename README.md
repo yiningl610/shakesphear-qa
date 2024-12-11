@@ -15,5 +15,5 @@ A simple Streamlit app that using Shaksphear plays as content that answering que
 2. Run the app
 
    ```
-   $ streamlit run app.py
+   $ streamlit run streamlit_app.py
    ```
